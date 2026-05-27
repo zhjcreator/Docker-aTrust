@@ -7,19 +7,19 @@
 容器同时提供：
 
 - VNC 桌面（端口 `5901`，密码固定为 `password`）。
-- SOCKS5 代理（默认端口 `1080`，推荐用于 Proxifier 分流）。
+- SOCKS5 代理（默认端口 `1080`，推荐用于 Clash Verge 分流）。
 - HTTP 代理（默认端口 `8888`，必选）。
 - aTrust 本地 Web 登录端口（端口 `54631`，用于 aTrust 拉起浏览器的登录流程）。
 
 > **端口可自定义。** SOCKS5 和 HTTP 代理的宿主机端口可通过环境变量 `SOCKS_PORT` 和 `HTTP_PORT` 调整（参见[运行容器](#2-运行容器)），容器内服务始终监听 `1080` / `8888`。
 
-> **外网代理与本仓库无关。** 如果你同时使用公网代理工具（如 Clash Verge，默认监听 `7897`），只需在 Proxifier 中按域名分别指向 Docker 容器代理（内网）和公网代理即可，本仓库不涉及外网代理配置。
+> **外网代理与本仓库无关。** 如果你同时使用公网代理工具（如 Clash Verge，默认监听 `7897`），可通过 Clash Verge 全局扩展脚本将内网流量指向 Docker 容器代理，并让其他流量继续按原订阅或公网代理规则处理。本仓库不涉及外网代理配置。
 
 ## 0. 前置条件
 
 - 已安装 Docker Desktop（macOS / Windows）或 Docker Engine（Linux）。
 - 已安装任意 VNC 客户端（macOS 可用系统自带"屏幕共享"；Windows 可用 RealVNC / TightVNC；Linux 可用 TigerVNC Viewer / Remmina）。
-- （可选）已安装 Proxifier（用于在宿主机做分流）。
+- （可选）已安装 Clash Verge（用于在宿主机做分流）。
 
 ### 各平台注意事项
 
@@ -28,7 +28,7 @@
 | **macOS**   | Docker Desktop + 系统自带"屏幕共享"即可。构建命令见下文。                                                                                                                                                                                                                                                          |
 | **Windows** | Docker Desktop for Windows + VNC 客户端。`docker run` 命令在 PowerShell 中使用 `` ` `` 换行而非 `\`，`$HOME` 换为 `$env:USERPROFILE`。                                                                                                                                                                             |
 | **Linux**   | Docker Engine + VNC 客户端。命令与 macOS 一致。确保 `/dev/net/tun` 设备存在。                                                                                                                                                                                                                                      |
-| **WSL 2**   | **推荐直接在 Windows 宿主机运行容器，不在 WSL 内运行。** WSL 2 开启 [Mirrored Networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) 后，WSL 内的进程可直接通过 `127.0.0.1` 访问 Windows 侧的代理端口，由 Windows 上的 Proxifier 统一管理分流，无需在 WSL 内单独配置代理。 |
+| **WSL 2**   | **推荐直接在 Windows 宿主机运行容器，不在 WSL 内运行。** WSL 2 开启 [Mirrored Networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) 后，WSL 内的进程可直接通过 `127.0.0.1` 访问 Windows 侧的代理端口，由 Windows 上的 Clash Verge 统一管理分流，无需在 WSL 内单独配置代理。 |
 
 ## 1. 构建镜像
 
@@ -145,34 +145,59 @@ docker run -d --name atrust-ubuntu `
 - 运行容器时是否设置了 `-e CHROMIUM=1`。
 - 是否使用了本仓库构建出来的新镜像（不要混用旧镜像）。
 
-## 4. 在宿主机使用 Proxifier 做分流（推荐）
+## 4. 在宿主机使用 Clash Verge 做分流（推荐）
 
 容器内 aTrust 建立连接后，会在宿主机暴露代理端口：
 
 - **SOCKS5 代理**：`127.0.0.1:${SOCKS_PORT}`（默认 `1080`）。
 - **HTTP 代理**：`127.0.0.1:${HTTP_PORT}`（默认 `8888`）。
 
-### 4.1 添加代理服务器
+### 4.1 添加全局扩展脚本
 
-在 Proxifier 中新增一个 Proxy Server：
+Clash Verge 的全局扩展脚本可以在订阅配置生效前追加代理节点和高优先级规则，适合把 aTrust 内网规则集中维护在一个脚本里。
 
-- Protocol：SOCKS5。
-- Address：`127.0.0.1`。
-- Port：`1080`（或你自定义的 `SOCKS_PORT`）。
+打开 Clash Verge 的全局扩展脚本编辑器，加入类似下面的脚本：
 
-建议开启"通过代理解析域名"（不同版本 UI 文案可能是 `Resolve hostnames through proxy` 或 `Remote DNS`）。
+```javascript
+function main(config) {
+  const atrustProxyName = "Docker-aTrust";
+  const atrustProxy = {
+    name: atrustProxyName,
+    type: "socks5",
+    server: "127.0.0.1",
+    port: 1080,
+    udp: true,
+  };
 
-### 4.2 添加分流规则（示例）
+  const atrustRules = [
+    "DOMAIN-SUFFIX,internal.example.com,Docker-aTrust",
+    "IP-CIDR,10.0.0.0/8,Docker-aTrust,no-resolve",
+    "IP-CIDR,172.16.0.0/12,Docker-aTrust,no-resolve",
+    "IP-CIDR,192.168.0.0/16,Docker-aTrust,no-resolve",
+  ];
 
-你可以按域名分流（推荐从小范围开始）：
+  config.proxies = (config.proxies || []).filter((proxy) => proxy.name !== atrustProxyName);
+  config.proxies.unshift(atrustProxy);
 
-- 规则 1：目标域名匹配 `*.internal.example.com`，走 aTrust 容器的 SOCKS5 代理。
-- 规则 2（如有外网代理）：其他流量走你本地的公网代理（如 Clash Verge 的 `127.0.0.1:7897`），或直连。
-- Default：Direct。
+  const oldRules = config.rules || [];
+  config.rules = atrustRules.concat(oldRules.filter((rule) => !atrustRules.includes(rule)));
+
+  return config;
+}
+```
+
+### 4.2 调整分流规则
+
+请按你的实际环境修改脚本中的域名和内网网段：
+
+- 域名规则：将 `internal.example.com` 替换成实际需要走 aTrust 的内网域名后缀。
+- 网段规则：仅保留你的 aTrust 服务端实际下发或需要访问的内网网段。
+- 规则顺序：脚本会把 `atrustRules` 放到订阅规则之前，因此这些内网规则会优先生效。
+- 端口配置：如果运行容器时修改了 `SOCKS_PORT`，同步修改脚本里的 `port`。
 
 提示：
 
-- 内网域名经常依赖 aTrust 下发的"内网 DNS"才能解析。开启 Proxifier 的 Remote DNS 后，域名解析会在容器侧完成，更容易避免 `NXDOMAIN`。
+- 内网域名经常依赖 aTrust 下发的"内网 DNS"才能解析。用 Clash Verge 将域名请求转发到 Docker 容器的 SOCKS5 代理后，解析过程更容易落在 aTrust 侧，避免宿主机本地 DNS 直接返回 `NXDOMAIN`。
 - 即便 aTrust 已生效，容器内仍然可能可以访问外网域名，这通常是分流（Split Tunnel）的结果，并不必然代表 aTrust 没有接管流量。
 
 ## 5. 常见问题与自检

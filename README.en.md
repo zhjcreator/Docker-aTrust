@@ -7,19 +7,19 @@ This repository is based on [docker-easyconnect](https://github.com/docker-easyc
 The container provides:
 
 - VNC desktop (port `5901`, password `password`).
-- SOCKS5 proxy (default port `1080`, recommended for Proxifier routing).
+- SOCKS5 proxy (default port `1080`, recommended for Clash Verge routing).
 - HTTP proxy (default port `8888`, mandatory).
 - aTrust local web login port (`54631`, used for aTrust's browser login redirect).
 
 > **Ports are customizable.** Host-side SOCKS5 and HTTP proxy ports can be adjusted via `SOCKS_PORT` and `HTTP_PORT` environment variables (see [Running the Container](#2-running-the-container)). Services inside the container always listen on `1080` / `8888`.
 
-> **Public internet proxies are unrelated to this repo.** If you also use a public proxy tool (for example, Clash Verge on its default `7897` port), simply configure Proxifier to route internal traffic to the Docker container proxy and public traffic to your local proxy. This repo does not manage public proxy configuration.
+> **Public internet proxies are unrelated to this repo.** If you also use a public proxy tool (for example, Clash Verge on its default `7897` port), use a Clash Verge global extension script to route internal traffic to the Docker container proxy and leave other traffic to your existing subscription or public proxy rules. This repo does not manage public proxy configuration.
 
 ## 0. Prerequisites
 
 - Docker Desktop (macOS / Windows) or Docker Engine (Linux) installed.
 - A VNC client installed (macOS: built-in "Screen Sharing"; Windows: RealVNC / TightVNC; Linux: TigerVNC Viewer / Remmina).
-- (Optional) Proxifier installed for host-side traffic routing.
+- (Optional) Clash Verge installed for host-side traffic routing.
 
 ### Platform Notes
 
@@ -28,7 +28,7 @@ The container provides:
 | **macOS**   | Docker Desktop + built-in "Screen Sharing". Build commands below.                                                                                                                                                                                                                                                                                                  |
 | **Windows** | Docker Desktop for Windows + VNC client. Use `` ` `` for line continuation instead of `\` in PowerShell; replace `$HOME` with `$env:USERPROFILE`.                                                                                                                                                                                                                  |
 | **Linux**   | Docker Engine + VNC client. Commands are the same as macOS. Ensure `/dev/net/tun` device exists.                                                                                                                                                                                                                                                                   |
-| **WSL 2**   | **Recommended: run the container on the Windows host, not inside WSL.** With WSL 2 [Mirrored Networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) enabled, processes inside WSL can access Windows-side proxy ports via `127.0.0.1`, and Proxifier on Windows manages all routing — no separate WSL proxy config needed. |
+| **WSL 2**   | **Recommended: run the container on the Windows host, not inside WSL.** With WSL 2 [Mirrored Networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) enabled, processes inside WSL can access Windows-side proxy ports via `127.0.0.1`, and Clash Verge on Windows manages all routing — no separate WSL proxy config needed. |
 
 ## 1. Building the Image
 
@@ -141,34 +141,59 @@ If you still need to manually copy the URL, check:
 - Container was started with `-e CHROMIUM=1`.
 - You're using the image built from this repo (don't mix with old images).
 
-## 4. Proxifier Routing (Recommended)
+## 4. Clash Verge Routing (Recommended)
 
 After aTrust connects inside the container, proxy ports are exposed on the host:
 
 - **SOCKS5**: `127.0.0.1:${SOCKS_PORT}` (default `1080`).
 - **HTTP**: `127.0.0.1:${HTTP_PORT}` (default `8888`).
 
-### 4.1 Add Proxy Server
+### 4.1 Add a Global Extension Script
 
-In Proxifier, add a new Proxy Server:
+Clash Verge global extension scripts can add proxy nodes and high-priority rules before the subscription rules take effect, which makes them a good place to keep aTrust internal routing rules.
 
-- Protocol: SOCKS5.
-- Address: `127.0.0.1`.
-- Port: `1080` (or your custom `SOCKS_PORT`).
+Open the Clash Verge global extension script editor and add a script like this:
 
-Enable "Resolve hostnames through proxy" (may appear as `Remote DNS` in some versions).
+```javascript
+function main(config) {
+  const atrustProxyName = "Docker-aTrust";
+  const atrustProxy = {
+    name: atrustProxyName,
+    type: "socks5",
+    server: "127.0.0.1",
+    port: 1080,
+    udp: true,
+  };
 
-### 4.2 Routing Rules (Example)
+  const atrustRules = [
+    "DOMAIN-SUFFIX,internal.example.com,Docker-aTrust",
+    "IP-CIDR,10.0.0.0/8,Docker-aTrust,no-resolve",
+    "IP-CIDR,172.16.0.0/12,Docker-aTrust,no-resolve",
+    "IP-CIDR,192.168.0.0/16,Docker-aTrust,no-resolve",
+  ];
 
-Route by domain (start narrow):
+  config.proxies = (config.proxies || []).filter((proxy) => proxy.name !== atrustProxyName);
+  config.proxies.unshift(atrustProxy);
 
-- Rule 1: `*.internal.example.com` -> aTrust container SOCKS5 proxy.
-- Rule 2 (if using public proxy): other traffic -> your local public proxy (for example, Clash Verge at `127.0.0.1:7897`), or Direct.
-- Default: Direct.
+  const oldRules = config.rules || [];
+  config.rules = atrustRules.concat(oldRules.filter((rule) => !atrustRules.includes(rule)));
+
+  return config;
+}
+```
+
+### 4.2 Adjust Routing Rules
+
+Adjust the example domains and internal network ranges for your environment:
+
+- Domain rules: replace `internal.example.com` with the internal domain suffix that should go through aTrust.
+- Network rules: keep only the internal CIDR ranges that your aTrust server assigns or that you need to access.
+- Rule order: the script prepends `atrustRules` before subscription rules, so these internal rules take priority.
+- Port configuration: if you changed `SOCKS_PORT` when starting the container, update `port` in the script as well.
 
 Tips:
 
-- Internal domains often require aTrust's internal DNS. Proxifier's Remote DNS resolves domains on the container side, avoiding `NXDOMAIN`.
+- Internal domains often require aTrust's internal DNS. Routing domain requests to the Docker container SOCKS5 proxy through Clash Verge makes resolution more likely to happen on the aTrust side, avoiding local-host `NXDOMAIN` responses.
 - aTrust containers may still access public internet domains — this is typically split-tunnel behavior and doesn't mean aTrust isn't working.
 
 ## 5. Troubleshooting
