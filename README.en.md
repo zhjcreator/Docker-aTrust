@@ -13,7 +13,7 @@ The container provides:
 
 > **Ports are customizable.** Host-side SOCKS5 and HTTP proxy ports can be adjusted via `SOCKS_PORT` and `HTTP_PORT` environment variables (see [Running the Container](#2-running-the-container)). Services inside the container always listen on `1080` / `8888`.
 
-> **Public internet proxies are unrelated to this repo.** If you also use a public proxy tool (e.g. Clash Verge on `7897`), simply configure Proxifier to route internal traffic to the Docker container proxy and public traffic to your local proxy. This repo does not manage public proxy configuration.
+> **Public internet proxies are unrelated to this repo.** If you also use a public proxy tool (for example, Clash Verge on its default `7897` port), simply configure Proxifier to route internal traffic to the Docker container proxy and public traffic to your local proxy. This repo does not manage public proxy configuration.
 
 ## 0. Prerequisites
 
@@ -134,7 +134,7 @@ Key parameters explained:
 2. Password: `password`.
 3. Two desktop icons: `aTrust` and `Chromium`.
 4. Double-click `aTrust`, log in per your organization's config.
-5. aTrust will auto-launch Chromium for web authentication pages (e.g. `cas.sii.edu.cn`).
+5. aTrust will auto-launch Chromium for the corresponding web authentication pages.
 
 If you still need to manually copy the URL, check:
 
@@ -162,14 +162,14 @@ Enable "Resolve hostnames through proxy" (may appear as `Remote DNS` in some ver
 
 Route by domain (start narrow):
 
-- Rule 1: `*.sii.edu.cn` → aTrust container SOCKS5 proxy.
-- Rule 2 (if using public proxy): other traffic → local public proxy (e.g. Clash Verge `127.0.0.1:7897`), or Direct.
+- Rule 1: `*.internal.example.com` -> aTrust container SOCKS5 proxy.
+- Rule 2 (if using public proxy): other traffic -> your local public proxy (for example, Clash Verge at `127.0.0.1:7897`), or Direct.
 - Default: Direct.
 
 Tips:
 
 - Internal domains often require aTrust's internal DNS. Proxifier's Remote DNS resolves domains on the container side, avoiding `NXDOMAIN`.
-- aTrust containers may still access `google.com` — this is typically split-tunnel behavior and doesn't mean aTrust isn't working.
+- aTrust containers may still access public internet domains — this is typically split-tunnel behavior and doesn't mean aTrust isn't working.
 
 ## 5. Troubleshooting
 
@@ -177,12 +177,12 @@ Tips:
 
 Ensure `--shm-size=512m` is in your run command. Use the desktop icon or `chromium-launcher` (this repo adds `--no-sandbox` and `--disable-dev-shm-usage`).
 
-### 5.2 aTrust Connected but Can't Access `qz.sii.edu.cn`
+### 5.2 aTrust Connected but Can't Access an Internal Domain
 
 Check DNS resolution inside the container:
 
 ```bash
-docker exec atrust-ubuntu dig qz.sii.edu.cn +short
+docker exec atrust-ubuntu dig service.internal.example.com +short
 ```
 
 Verify TUN and routing:

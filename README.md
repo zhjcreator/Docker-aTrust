@@ -13,7 +13,7 @@
 
 > **端口可自定义。** SOCKS5 和 HTTP 代理的宿主机端口可通过环境变量 `SOCKS_PORT` 和 `HTTP_PORT` 调整（参见[运行容器](#2-运行容器)），容器内服务始终监听 `1080` / `8888`。
 
-> **外网代理与本仓库无关。** 如果你同时使用公网代理工具（如 Clash Verge 监听 `7897`），只需在 Proxifier 中按域名分别指向 Docker 容器代理（内网）和公网代理即可，本仓库不涉及外网代理配置。
+> **外网代理与本仓库无关。** 如果你同时使用公网代理工具（如 Clash Verge，默认监听 `7897`），只需在 Proxifier 中按域名分别指向 Docker 容器代理（内网）和公网代理即可，本仓库不涉及外网代理配置。
 
 ## 0. 前置条件
 
@@ -133,8 +133,8 @@ docker run -d --name atrust-ubuntu `
 1. 使用 VNC 连接到：`127.0.0.1:5901`。
 2. 密码：`password`。
 3. 桌面上会有两个图标：`aTrust` 与 `Chromium`。
-4. 双击 `aTrust`，按你的学校/单位配置登录。
-5. aTrust 需要网页认证时会自动拉起 Chromium 打开跳转页面（例如 `cas.sii.edu.cn`）。
+4. 双击 `aTrust`，按你的组织或服务端配置登录。
+5. aTrust 需要网页认证时会自动拉起 Chromium 打开对应的认证页面。
 
 > **请从桌面图标启动 `aTrust`。** 仓库内置的桌面入口会先补起 `aTrustDaemon`，再打开 `Tray`。如果你直接运行 `/usr/share/sangfor/aTrust/aTrustTray`，可能会看到 “The core service was started，causing some functions to be abnormal” 之类的提示。
 
@@ -166,14 +166,14 @@ docker run -d --name atrust-ubuntu `
 
 你可以按域名分流（推荐从小范围开始）：
 
-- 规则 1：目标域名匹配 `*.sii.edu.cn`，走 aTrust 容器的 SOCKS5 代理。
+- 规则 1：目标域名匹配 `*.internal.example.com`，走 aTrust 容器的 SOCKS5 代理。
 - 规则 2（如有外网代理）：其他流量走你本地的公网代理（如 Clash Verge 的 `127.0.0.1:7897`），或直连。
 - Default：Direct。
 
 提示：
 
 - 内网域名经常依赖 aTrust 下发的"内网 DNS"才能解析。开启 Proxifier 的 Remote DNS 后，域名解析会在容器侧完成，更容易避免 `NXDOMAIN`。
-- 即便 aTrust 已生效，容器内仍然可能可以访问 `google.com`，这通常是分流（Split Tunnel）的结果，并不必然代表 aTrust 没有接管流量。
+- 即便 aTrust 已生效，容器内仍然可能可以访问外网域名，这通常是分流（Split Tunnel）的结果，并不必然代表 aTrust 没有接管流量。
 
 ## 5. 常见问题与自检
 
@@ -181,12 +181,12 @@ docker run -d --name atrust-ubuntu `
 
 优先确认运行参数包含 `--shm-size=512m`。其次确认你是通过桌面图标或 `chromium-launcher` 启动（本仓库已统一加上 `--no-sandbox` 与 `--disable-dev-shm-usage`）。
 
-### 5.2 aTrust 已登录但访问不了 `qz.sii.edu.cn`
+### 5.2 aTrust 已登录但访问不了内网域名
 
 先在容器内检查域名解析是否走到内网 DNS：
 
 ```bash
-docker exec atrust-ubuntu dig qz.sii.edu.cn +short
+docker exec atrust-ubuntu dig service.internal.example.com +short
 ```
 
 再确认 aTrust 的 TUN 与策略是否正常：
