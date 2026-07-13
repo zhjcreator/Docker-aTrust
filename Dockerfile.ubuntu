@@ -64,7 +64,8 @@ RUN sed -i \
             libx11-xcb1 libnss3 libasound2 iptables xclip libxtst6 \
             dante-server tigervnc-standalone-server tigervnc-common psmisc flwm x11-utils \
             busybox iproute2 tinyproxy libxss1 ca-certificates pcmanfm \
-            fonts-wqy-microhei socat wget $qemu_pkgs $extra_pkgs && \
+            fonts-wqy-microhei socat wget xdotool iputils-ping python3 python3-gi \
+            gir1.2-gtk-3.0 $qemu_pkgs $extra_pkgs && \
         break; \
         if [ "$i" -ge 10 ]; then \
             echo "ERROR: apt-get failed too many times." >&2; \
@@ -116,6 +117,10 @@ ARG VPN_URL ELECTRON_URL USE_VPN_ELECTRON VPN_DEB_PATH
 RUN /tmp/build-scripts/install-vpn-gui.sh
 
 COPY ./docker-root /
+
+# 安装保活程序
+COPY ["./keep-alive/keep-alive.py", "./keep-alive/keep-alive-gui.py", "/usr/local/bin/"]
+RUN chmod 0755 /usr/local/bin/keep-alive.py /usr/local/bin/keep-alive-gui.py
 
 ENV PING_INTERVAL=1800
 

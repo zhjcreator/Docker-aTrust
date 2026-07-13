@@ -132,7 +132,7 @@ docker run -d --name atrust-ubuntu `
 
 1. 使用 VNC 连接到：`127.0.0.1:5901`。
 2. 密码：`password`。
-3. 桌面上会有两个图标：`aTrust` 与 `Chromium`。
+3. 桌面上会有三个图标：`aTrust`、`Chromium` 与 `Keep Alive`。
 4. 双击 `aTrust`，按你的组织或服务端配置登录。
 5. aTrust 需要网页认证时会自动拉起 Chromium 打开对应的认证页面。
 
@@ -200,13 +200,104 @@ function main(config) {
 - 内网域名经常依赖 aTrust 下发的"内网 DNS"才能解析。用 Clash Verge 将域名请求转发到 Docker 容器的 SOCKS5 代理后，解析过程更容易落在 aTrust 侧，避免宿主机本地 DNS 直接返回 `NXDOMAIN`。
 - 即便 aTrust 已生效，容器内仍然可能可以访问外网域名，这通常是分流（Split Tunnel）的结果，并不必然代表 aTrust 没有接管流量。
 
-## 5. 常见问题与自检
+## 5. 保活程序（Keep Alive）
 
-### 5.1 Chromium 点击就闪退
+本仓库在容器内新增了一个保活程序，用于防止系统因长时间空闲而断开连接或判定为不活跃。
+
+### 5.1 功能说明
+
+保活程序包含以下功能：
+
+- **定时 ICMP Ping**：按配置的间隔，向指定服务器发送 ICMP 包（支持多个目标地址）。
+- **鼠标微操作**：定时将鼠标移动若干像素后返回原位，模拟微小活动。
+- **键盘微操作**：定时按下指定按键（如 `shift`、`ctrl`），不产生实际输入。
+
+### 5.2 使用方式
+
+保活程序**不会自动启动**，需要手动操作：
+
+1. 通过 VNC 连接到桌面。
+2. 双击桌面上的 `Keep Alive` 图标，打开设置界面。
+3. 在设置界面中配置参数：
+   - **Ping 目标**：填写需要保活的目标 IP 或域名（每行一个）。
+   - **Ping 间隔**：发送 ping 的频率（默认 30 秒）。
+   - **鼠标/键盘操作**：可单独启用或禁用，可调整间隔和幅度。
+4. 点击 **"保存配置"** 保存设置。
+5. 点击 **"▶ 启动"** 启动守护进程（状态栏会显示运行状态和 PID）。
+6. 需要停止时点击 **"■ 停止"**。
+
+> 配置文件存储在 `/root/.keep-alive/config.json`，由于 `/root` 目录通过 Docker volume 挂载持久化，重启容器后配置会自动保留，但守护进程仍需手动启动。
+
+### 5.3 命令行操作
+
+也可以在容器内通过命令行管理保活程序：
+
+```bash
+# 启动守护进程
+docker exec atrust-ubuntu python3 /usr/local/bin/keep-alive.py --start
+
+# 停止守护进程
+docker exec atrust-ubuntu python3 /usr/local/bin/keep-alive.py --stop
+
+# 查看运行状态
+docker exec atrust-ubuntu python3 /usr/local/bin/keep-alive.py --status
+
+# 查看日志
+docker exec atrust-ubuntu tail -n 50 /root/.keep-alive/daemon.log
+
+# 编辑配置（JSON 格式）
+docker exec atrust-ubuntu cat /root/.keep-alive/config.json
+```
+
+### 5.4 配置示例
+
+`/root/.keep-alive/config.json` 的默认结构：
+
+```json
+{
+  "enabled": false,
+  "ping": {
+    "targets": [],
+    "interval": 30,
+    "timeout": 3,
+    "count": 1
+  },
+  "mouse": {
+    "enabled": true,
+    "interval": 60,
+    "dx": 1,
+    "dy": 1,
+    "return_to_origin": true
+  },
+  "keyboard": {
+    "enabled": true,
+    "interval": 120,
+    "keys": ["shift"]
+  }
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `ping.targets` | Ping 目标列表，每项为 IP 或域名 |
+| `ping.interval` | Ping 间隔秒数（最小 5） |
+| `ping.timeout` | 单次 Ping 超时秒数 |
+| `ping.count` | 每次 Ping 发送的包数 |
+| `mouse.enabled` | 是否启用鼠标微移动 |
+| `mouse.interval` | 鼠标操作间隔秒数 |
+| `mouse.dx/dy` | 鼠标偏移像素数 |
+| `mouse.return_to_origin` | 移动后是否返回原位 |
+| `keyboard.enabled` | 是否启用键盘微操作 |
+| `keyboard.interval` | 键盘操作间隔秒数 |
+| `keyboard.keys` | 按键名称列表（如 `shift`、`ctrl`、`alt`） |
+
+## 6. 常见问题与自检
+
+### 6.1 Chromium 点击就闪退
 
 优先确认运行参数包含 `--shm-size=512m`。其次确认你是通过桌面图标或 `chromium-launcher` 启动（本仓库已统一加上 `--no-sandbox` 与 `--disable-dev-shm-usage`）。
 
-### 5.2 aTrust 已登录但访问不了内网域名
+### 6.2 aTrust 已登录但访问不了内网域名
 
 先在容器内检查域名解析是否走到内网 DNS：
 
@@ -225,7 +316,7 @@ docker exec atrust-ubuntu sysctl -n net.ipv4.conf.utun7.route_localnet
 
 - `--sysctl net.ipv4.conf.default.route_localnet=1`。
 
-### 5.3 桌面图标偶尔消失
+### 6.3 桌面图标偶尔消失
 
 当你把宿主机目录挂载到 `/root` 时，某些环境下 `~/.cache` 不支持 Unix socket，导致桌面管理器启动失败。本仓库已将 `pcmanfm` 的缓存与运行目录指向 `/tmp`，并做了延迟重试。
 
@@ -235,7 +326,7 @@ docker exec atrust-ubuntu sysctl -n net.ipv4.conf.utun7.route_localnet
 docker exec atrust-ubuntu tail -n 200 /tmp/pcmanfm-desktop.log
 ```
 
-### 5.4 `8888` 代理不可用导致容器退出
+### 6.4 `8888` 代理不可用导致容器退出
 
 `8888` 是必选代理端口。容器启动时会严格检查 tinyproxy，运行中若 tinyproxy 进程消失或 `8888` 不再监听，容器会主动退出，避免出现"VPN 在线但 HTTP 代理已失效"的假健康状态。
 
@@ -247,7 +338,7 @@ docker exec atrust-ubuntu ss -lntp | grep ':8888'
 docker exec atrust-ubuntu tail -n 200 /var/log/tinyproxy/tinyproxy.log
 ```
 
-### 5.5 Windows 上 `/dev/net/tun` 不存在
+### 6.5 Windows 上 `/dev/net/tun` 不存在
 
 Docker Desktop for Windows 使用 Linux VM 运行容器，`/dev/net/tun` 在 VM 内自动可用。如果报错，确认 Docker Desktop 已启用 WSL 2 后端或 Hyper-V 后端。
 

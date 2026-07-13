@@ -371,6 +371,22 @@ Categories=Network;WebBrowser;
 EOF
 			chmod 0755 "$desktop_dir/Chromium.desktop"
 		fi
+
+		# 保活程序桌面快捷方式
+		if command -v keep-alive-launcher >/dev/null 2>&1; then
+			cat > "$desktop_dir/KeepAlive.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Keep Alive
+Comment=保活程序设置界面
+Exec=/usr/local/bin/keep-alive-launcher
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;
+EOF
+			chmod 0755 "$desktop_dir/KeepAlive.desktop"
+		fi
 	}
 
 	start_desktop_icons() {

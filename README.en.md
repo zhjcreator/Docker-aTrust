@@ -132,7 +132,7 @@ Key parameters explained:
 
 1. Connect VNC to `127.0.0.1:5901`.
 2. Password: `password`.
-3. Two desktop icons: `aTrust` and `Chromium`.
+3. Three desktop icons: `aTrust`, `Chromium`, and `Keep Alive`.
 4. Double-click `aTrust`, log in per your organization's config.
 5. aTrust will auto-launch Chromium for the corresponding web authentication pages.
 
@@ -196,13 +196,104 @@ Tips:
 - Internal domains often require aTrust's internal DNS. Routing domain requests to the Docker container SOCKS5 proxy through Clash Verge makes resolution more likely to happen on the aTrust side, avoiding local-host `NXDOMAIN` responses.
 - aTrust containers may still access public internet domains — this is typically split-tunnel behavior and doesn't mean aTrust isn't working.
 
-## 5. Troubleshooting
+## 5. Keep Alive Program
 
-### 5.1 Chromium Crashes on Click
+This repo adds a keep-alive program inside the container to prevent the system from disconnecting or marking the session as idle.
+
+### 5.1 Features
+
+The keep-alive program provides:
+
+- **Periodic ICMP Ping**: Sends ICMP packets to specified servers at configurable intervals (supports multiple targets).
+- **Mouse Micro-operations**: Periodically moves the mouse a few pixels and returns it to the original position, simulating minor activity.
+- **Keyboard Micro-operations**: Periodically presses specified keys (e.g., `shift`, `ctrl`) without producing actual input.
+
+### 5.2 Usage
+
+The keep-alive program **does not start automatically** — it requires manual activation:
+
+1. Connect to the desktop via VNC.
+2. Double-click the `Keep Alive` desktop icon to open the settings GUI.
+3. Configure parameters in the settings window:
+   - **Ping targets**: Enter IP addresses or domain names (one per line).
+   - **Ping interval**: Frequency of ping requests (default 30 seconds).
+   - **Mouse / Keyboard operations**: Enable/disable individually; adjust intervals and parameters.
+4. Click **"Save Config"** to save settings.
+5. Click **"▶ Start"** to launch the daemon (status bar shows running state and PID).
+6. Click **"■ Stop"** to stop the daemon.
+
+> Configuration is stored in `/root/.keep-alive/config.json`. Since `/root` is mounted as a Docker volume for persistence, your settings survive container restarts — but the daemon still needs to be started manually each time.
+
+### 5.3 Command-Line Management
+
+You can also manage the keep-alive program from the command line:
+
+```bash
+# Start the daemon
+docker exec atrust-ubuntu python3 /usr/local/bin/keep-alive.py --start
+
+# Stop the daemon
+docker exec atrust-ubuntu python3 /usr/local/bin/keep-alive.py --stop
+
+# Check status
+docker exec atrust-ubuntu python3 /usr/local/bin/keep-alive.py --status
+
+# View logs
+docker exec atrust-ubuntu tail -n 50 /root/.keep-alive/daemon.log
+
+# Edit configuration (JSON format)
+docker exec atrust-ubuntu cat /root/.keep-alive/config.json
+```
+
+### 5.4 Configuration Reference
+
+Default structure of `/root/.keep-alive/config.json`:
+
+```json
+{
+  "enabled": false,
+  "ping": {
+    "targets": [],
+    "interval": 30,
+    "timeout": 3,
+    "count": 1
+  },
+  "mouse": {
+    "enabled": true,
+    "interval": 60,
+    "dx": 1,
+    "dy": 1,
+    "return_to_origin": true
+  },
+  "keyboard": {
+    "enabled": true,
+    "interval": 120,
+    "keys": ["shift"]
+  }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `ping.targets` | List of ping targets (IP or domain name) |
+| `ping.interval` | Ping interval in seconds (minimum 5) |
+| `ping.timeout` | Single ping timeout in seconds |
+| `ping.count` | Number of packets per ping |
+| `mouse.enabled` | Enable/disable mouse micro-movement |
+| `mouse.interval` | Mouse operation interval in seconds |
+| `mouse.dx/dy` | Mouse offset in pixels |
+| `mouse.return_to_origin` | Return mouse to original position after move |
+| `keyboard.enabled` | Enable/disable keyboard micro-operations |
+| `keyboard.interval` | Keyboard operation interval in seconds |
+| `keyboard.keys` | Key names list (e.g., `shift`, `ctrl`, `alt`) |
+
+## 6. Troubleshooting
+
+### 6.1 Chromium Crashes on Click
 
 Ensure `--shm-size=512m` is in your run command. Use the desktop icon or `chromium-launcher` (this repo adds `--no-sandbox` and `--disable-dev-shm-usage`).
 
-### 5.2 aTrust Connected but Can't Access an Internal Domain
+### 6.2 aTrust Connected but Can't Access an Internal Domain
 
 Check DNS resolution inside the container:
 
@@ -219,7 +310,7 @@ docker exec atrust-ubuntu sysctl -n net.ipv4.conf.utun7.route_localnet
 
 If `route_localnet` is not `1`, you likely forgot `--sysctl net.ipv4.conf.default.route_localnet=1`.
 
-### 5.3 Desktop Icons Disappear
+### 6.3 Desktop Icons Disappear
 
 When mounting a host directory to `/root`, `~/.cache` may not support Unix sockets, causing the desktop manager to fail. This repo redirects `pcmanfm` cache to `/tmp` with delayed retry.
 
@@ -227,7 +318,7 @@ When mounting a host directory to `/root`, `~/.cache` may not support Unix socke
 docker exec atrust-ubuntu tail -n 200 /tmp/pcmanfm-desktop.log
 ```
 
-### 5.4 Port `8888` Unavailable Causes Container Exit
+### 6.4 Port `8888` Unavailable Causes Container Exit
 
 `8888` is the mandatory proxy port. The container strictly monitors tinyproxy — if it crashes or stops listening, the container exits to avoid a "VPN online but proxy dead" false-healthy state.
 
@@ -237,7 +328,7 @@ docker exec atrust-ubuntu ss -lntp | grep ':8888'
 docker exec atrust-ubuntu tail -n 200 /var/log/tinyproxy/tinyproxy.log
 ```
 
-### 5.5 `/dev/net/tun` Not Found on Windows
+### 6.5 `/dev/net/tun` Not Found on Windows
 
 Docker Desktop for Windows runs containers in a Linux VM where `/dev/net/tun` is automatically available. If you get an error, ensure Docker Desktop has WSL 2 or Hyper-V backend enabled.
 
