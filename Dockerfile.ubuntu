@@ -131,7 +131,7 @@ COPY ./docker-root /
 
 # 安装保活程序
 COPY ["./keep-alive/keep-alive.py", "./keep-alive/keep-alive-gui.py", "/usr/local/bin/"]
-RUN chmod 0755 /usr/local/bin/keep-alive.py /usr/local/bin/keep-alive-gui.py
+RUN chmod 0755 /usr/local/bin/keep-alive.py /usr/local/bin/keep-alive-gui.py /usr/local/bin/novnc-websockify-wrapper.py
 
 # novnc 命令指向 min-size 启动方式
 RUN ln -sf /usr/local/bin/novnc-min-size.sh /usr/local/bin/novnc
