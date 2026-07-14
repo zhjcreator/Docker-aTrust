@@ -65,7 +65,7 @@ RUN sed -i \
             dante-server tigervnc-standalone-server tigervnc-common psmisc flwm x11-utils \
             busybox iproute2 tinyproxy libxss1 ca-certificates pcmanfm \
             fonts-wqy-microhei socat wget xdotool iputils-ping python3 python3-gi \
-            gir1.2-gtk-3.0 $qemu_pkgs $extra_pkgs && \
+            gir1.2-gtk-3.0 python3-pip python3-numpy $qemu_pkgs $extra_pkgs && \
         break; \
         if [ "$i" -ge 10 ]; then \
             echo "ERROR: apt-get failed too many times." >&2; \
@@ -89,7 +89,12 @@ RUN sed -i \
             sleep 2; \
         done; \
     fi && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    pip3 install --no-cache-dir websockify==0.10.0 && \
+    mkdir -p /usr/local/share/novnc && \
+    wget -q -O /tmp/novnc.tar.gz https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz && \
+    tar -xzf /tmp/novnc.tar.gz -C /usr/local/share/novnc --strip-components=1 && \
+    rm -f /tmp/novnc.tar.gz
 
 RUN if command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then \
         ln -sf "$(command -v chromium-browser)" /usr/bin/chromium; \
@@ -121,6 +126,9 @@ COPY ./docker-root /
 # 安装保活程序
 COPY ["./keep-alive/keep-alive.py", "./keep-alive/keep-alive-gui.py", "/usr/local/bin/"]
 RUN chmod 0755 /usr/local/bin/keep-alive.py /usr/local/bin/keep-alive-gui.py
+
+# novnc 命令指向 min-size 启动方式
+RUN ln -sf /usr/local/bin/novnc-min-size.sh /usr/local/bin/novnc
 
 ENV PING_INTERVAL=1800
 

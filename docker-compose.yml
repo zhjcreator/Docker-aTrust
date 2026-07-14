@@ -1,0 +1,31 @@
+services:
+  atrust:
+    image: atrust-ubuntu:chromium
+    container_name: atrust-ubuntu
+    restart: unless-stopped
+    devices:
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.conf.default.route_localnet=1
+    shm_size: "512m"
+    environment:
+      - PASSWORD=password
+      - CHROMIUM=1
+      - URLWIN=1
+      - USE_NOVNC=1
+      # - PING_ADDR=10.0.0.1       # 内置 ping 目标（与 Keep Alive 程序独立）
+      # - PING_ADDR_URL=http://...  # 内置 wget 保活目标
+      # - CLIP_TEXT=                # VNC 剪贴板初始内容
+      # - VNC_SIZE=1110x620         # VNC 分辨率
+      # - SOCKS_PORT=1080           # 容器内 SOCKS5 端口（固定 1080）
+      # - HTTP_PORT=8888            # 容器内 HTTP 端口（固定 8888）
+    ports:
+      - "8080:8080"   # noVNC（浏览器访问）
+      - "5901:5901"   # VNC
+      - "1080:1080"   # SOCKS5 代理
+      - "8888:8888"   # HTTP 代理
+      - "54631:54631" # aTrust Web 登录
+    volumes:
+      - ./data:/root

@@ -7,6 +7,7 @@
 容器同时提供：
 
 - VNC 桌面（端口 `5901`，密码固定为 `password`）。
+- noVNC 网页访问（端口 `8080`，浏览器直接打开）。
 - SOCKS5 代理（默认端口 `1080`，推荐用于 Clash Verge 分流）。
 - HTTP 代理（默认端口 `8888`，必选）。
 - aTrust 本地 Web 登录端口（端口 `54631`，用于 aTrust 拉起浏览器的登录流程）。
@@ -18,7 +19,7 @@
 ## 0. 前置条件
 
 - 已安装 Docker Desktop（macOS / Windows）或 Docker Engine（Linux）。
-- 已安装任意 VNC 客户端（macOS 可用系统自带"屏幕共享"；Windows 可用 RealVNC / TightVNC；Linux 可用 TigerVNC Viewer / Remmina）。
+- （可选）已安装任意 VNC 客户端（macOS 可用系统自带"屏幕共享"；Windows 可用 RealVNC / TightVNC；Linux 可用 TigerVNC Viewer / Remmina）。也可直接使用浏览器访问 noVNC。
 - （可选）已安装 Clash Verge（用于在宿主机做分流）。
 
 ### 各平台注意事项
@@ -85,6 +86,8 @@ docker run -d --name atrust-ubuntu \
   -e PASSWORD=password \
   -e CHROMIUM=1 \
   -e URLWIN=1 \
+  -e USE_NOVNC=1 \
+  -p 8080:8080 \
   -p 5901:5901 \
   -p ${SOCKS_PORT:-1080}:1080 \
   -p ${HTTP_PORT:-8888}:8888 \
@@ -105,6 +108,8 @@ docker run -d --name atrust-ubuntu `
   -e PASSWORD=password `
   -e CHROMIUM=1 `
   -e URLWIN=1 `
+  -e USE_NOVNC=1 `
+  -p 8080:8080 `
   -p 5901:5901 `
   -p "${env:SOCKS_PORT ?? 1080}:1080" `
   -p "${env:HTTP_PORT ?? 8888}:8888" `
@@ -125,16 +130,31 @@ docker run -d --name atrust-ubuntu `
 - `-e PASSWORD=password`：固定 VNC 密码为 `password`（你也可以自行改成别的值，但本仓库默认建议固定为 `password`）。
 - `-e CHROMIUM=1`：启用容器内 Chromium 自动拉起与跳转处理（包括 aTrust 的登录跳转）。
 - `-e URLWIN=1`：当 aTrust 试图打开 URL 时，额外弹窗提示并把 URL 写入剪贴板（排障时很有用）。
+- `-e USE_NOVNC=1`：启用 noVNC，通过浏览器访问 `http://<服务器IP>:8080` 即可使用 VNC 桌面。
+- `-p 8080:8080`：noVNC 网页端口（仅在启用 `USE_NOVNC` 时需要）。
 - `-v $HOME/.atrust-data:/root`：持久化 `/root`（包括 aTrust 登录信息、Chromium 配置等）。
 - `-p ${HTTP_PORT:-8888}:8888`：`8888` 为必选 HTTP 代理端口，若 tinyproxy 启动失败或运行中丢失监听，容器会退出。
 
-## 3. 通过 VNC 打开桌面并登录 aTrust
+## 3. 通过 VNC / noVNC 打开桌面并登录 aTrust
+
+### 方式一：VNC 客户端
 
 1. 使用 VNC 连接到：`127.0.0.1:5901`。
 2. 密码：`password`。
-3. 桌面上会有三个图标：`aTrust`、`Chromium` 与 `Keep Alive`。
-4. 双击 `aTrust`，按你的组织或服务端配置登录。
-5. aTrust 需要网页认证时会自动拉起 Chromium 打开对应的认证页面。
+
+### 方式二：浏览器（noVNC，推荐用于远程服务器）
+
+1. 在浏览器中打开：`http://<服务器IP>:8080`。
+2. 输入密码：`password`。
+3. 点击 Connect 即可进入桌面。
+
+> **远程服务器部署时推荐使用 noVNC。** 不需要在服务器上开放 5901 端口或安装 VNC 客户端，只需开放 8080 端口即可通过浏览器访问桌面。
+
+### 登录 aTrust
+
+1. 桌面上会有三个图标：`aTrust`、`Chromium` 与 `Keep Alive`。
+2. 双击 `aTrust`，按你的组织或服务端配置登录。
+3. aTrust 需要网页认证时会自动拉起 Chromium 打开对应的认证页面。
 
 > **请从桌面图标启动 `aTrust`。** 仓库内置的桌面入口会先补起 `aTrustDaemon`，再打开 `Tray`。如果你直接运行 `/usr/share/sangfor/aTrust/aTrustTray`，可能会看到 “The core service was started，causing some functions to be abnormal” 之类的提示。
 

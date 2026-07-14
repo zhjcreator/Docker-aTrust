@@ -7,6 +7,7 @@ This repository is based on [docker-easyconnect](https://github.com/docker-easyc
 The container provides:
 
 - VNC desktop (port `5901`, password `password`).
+- noVNC web access (port `8080`, open in browser directly).
 - SOCKS5 proxy (default port `1080`, recommended for Clash Verge routing).
 - HTTP proxy (default port `8888`, mandatory).
 - aTrust local web login port (`54631`, used for aTrust's browser login redirect).
@@ -18,7 +19,7 @@ The container provides:
 ## 0. Prerequisites
 
 - Docker Desktop (macOS / Windows) or Docker Engine (Linux) installed.
-- A VNC client installed (macOS: built-in "Screen Sharing"; Windows: RealVNC / TightVNC; Linux: TigerVNC Viewer / Remmina).
+- (Optional) A VNC client installed (macOS: built-in "Screen Sharing"; Windows: RealVNC / TightVNC; Linux: TigerVNC Viewer / Remmina). You can also use noVNC directly in a browser.
 - (Optional) Clash Verge installed for host-side traffic routing.
 
 ### Platform Notes
@@ -85,6 +86,8 @@ docker run -d --name atrust-ubuntu \
   -e PASSWORD=password \
   -e CHROMIUM=1 \
   -e URLWIN=1 \
+  -e USE_NOVNC=1 \
+  -p 8080:8080 \
   -p 5901:5901 \
   -p ${SOCKS_PORT:-1080}:1080 \
   -p ${HTTP_PORT:-8888}:8888 \
@@ -105,6 +108,8 @@ docker run -d --name atrust-ubuntu `
   -e PASSWORD=password `
   -e CHROMIUM=1 `
   -e URLWIN=1 `
+  -e USE_NOVNC=1 `
+  -p 8080:8080 `
   -p 5901:5901 `
   -p "${env:SOCKS_PORT ?? 1080}:1080" `
   -p "${env:HTTP_PORT ?? 8888}:8888" `
@@ -125,16 +130,31 @@ Key parameters explained:
 - `-e PASSWORD=password`: fixed VNC password (change if desired, but `password` is the default).
 - `-e CHROMIUM=1`: enables automatic Chromium launch for aTrust login redirects.
 - `-e URLWIN=1`: shows URL popup and copies to clipboard when aTrust opens a URL (useful for debugging).
+- `-e USE_NOVNC=1`: enables noVNC — access the VNC desktop via browser at `http://<server-ip>:8080`.
+- `-p 8080:8080`: noVNC web port (only needed when `USE_NOVNC` is enabled).
 - `-v $HOME/.atrust-data:/root`: persists `/root` (aTrust login data, Chromium config, etc.).
 - `-p ${HTTP_PORT:-8888}:8888`: `8888` is the mandatory HTTP proxy port. If tinyproxy fails or stops listening, the container exits.
 
-## 3. VNC Desktop Login
+## 3. VNC / noVNC Desktop Login
+
+### Option A: VNC Client
 
 1. Connect VNC to `127.0.0.1:5901`.
 2. Password: `password`.
-3. Three desktop icons: `aTrust`, `Chromium`, and `Keep Alive`.
-4. Double-click `aTrust`, log in per your organization's config.
-5. aTrust will auto-launch Chromium for the corresponding web authentication pages.
+
+### Option B: Browser (noVNC, recommended for remote servers)
+
+1. Open `http://<server-ip>:8080` in your browser.
+2. Enter password: `password`.
+3. Click Connect to enter the desktop.
+
+> **noVNC is recommended for remote server deployments.** No need to open port 5901 or install a VNC client — just open port 8080 for browser access.
+
+### Log into aTrust
+
+1. Three desktop icons: `aTrust`, `Chromium`, and `Keep Alive`.
+2. Double-click `aTrust`, log in per your organization's config.
+3. aTrust will auto-launch Chromium for the corresponding web authentication pages.
 
 If you still need to manually copy the URL, check:
 
