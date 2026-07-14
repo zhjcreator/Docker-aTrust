@@ -92,6 +92,7 @@ RUN sed -i \
         done; \
     fi && \
     rm -rf /var/lib/apt/lists/* && \
+    pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
     pip3 install --no-cache-dir -i ${PIP_INDEX_URL} websockify==0.10.0 && \
     mkdir -p /usr/local/share/novnc && \
     ( wget -q -O /tmp/novnc.tar.gz ${NOVNC_URL} || \
