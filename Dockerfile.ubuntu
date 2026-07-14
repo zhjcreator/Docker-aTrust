@@ -38,6 +38,8 @@ ARG EC_HOST VPN_TYPE=EC_GUI http_proxy https_proxy CHROMIUM
 ARG UBUNTU_ARCHIVE_MIRROR
 ARG UBUNTU_SECURITY_MIRROR
 ARG UBUNTU_PORTS_MIRROR
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG NOVNC_URL=https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -90,9 +92,12 @@ RUN sed -i \
         done; \
     fi && \
     rm -rf /var/lib/apt/lists/* && \
-    pip3 install --no-cache-dir websockify==0.10.0 && \
+    pip3 install --no-cache-dir -i ${PIP_INDEX_URL} websockify==0.10.0 && \
     mkdir -p /usr/local/share/novnc && \
-    wget -q -O /tmp/novnc.tar.gz https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz && \
+    ( wget -q -O /tmp/novnc.tar.gz ${NOVNC_URL} || \
+      wget -q -O /tmp/novnc.tar.gz https://ghp.ci/${NOVNC_URL} || \
+      wget -q -O /tmp/novnc.tar.gz https://mirror.ghproxy.com/${NOVNC_URL} || \
+      wget -q -O /tmp/novnc.tar.gz https://gh-proxy.com/${NOVNC_URL} ) && \
     tar -xzf /tmp/novnc.tar.gz -C /usr/local/share/novnc --strip-components=1 && \
     rm -f /tmp/novnc.tar.gz
 
