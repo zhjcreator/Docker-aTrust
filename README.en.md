@@ -161,14 +161,16 @@ If you still need to manually copy the URL, check:
 - Container was started with `-e CHROMIUM=1`.
 - You're using the image built from this repo (don't mix with old images).
 
-## 4. Clash Verge Routing (Recommended)
+## 4. Accessing the aTrust Network Through the Container Proxy
 
 After aTrust connects inside the container, proxy ports are exposed on the host:
 
 - **SOCKS5**: `127.0.0.1:${SOCKS_PORT}` (default `1080`).
 - **HTTP**: `127.0.0.1:${HTTP_PORT}` (default `8888`).
 
-### 4.1 Add a Global Extension Script
+Two approaches are documented below: use Clash Verge to route multiple applications by domain or network range, or configure OpenSSH to use SOCKS5 directly when only SSH access is needed.
+
+### 4.1 Clash Verge: Add a Global Extension Script
 
 Clash Verge global extension scripts can add proxy nodes and high-priority rules before the subscription rules take effect, which makes them a good place to keep aTrust internal routing rules.
 
@@ -202,7 +204,7 @@ function main(config) {
 }
 ```
 
-### 4.2 Adjust Routing Rules
+### 4.2 Clash Verge: Adjust Routing Rules
 
 Adjust the example domains and internal network ranges for your environment:
 
@@ -215,6 +217,59 @@ Tips:
 
 - Internal domains often require aTrust's internal DNS. Routing domain requests to the Docker container SOCKS5 proxy through Clash Verge makes resolution more likely to happen on the aTrust side, avoiding local-host `NXDOMAIN` responses.
 - aTrust containers may still access public internet domains — this is typically split-tunnel behavior and doesn't mean aTrust isn't working.
+
+### 4.3 Without Clash: OpenSSH Directly Through SOCKS5
+
+If SSH is the only required internal service, Clash is not needed. Configure OpenSSH with `ProxyCommand` so that it connects through the SOCKS5 port published by Docker-aTrust:
+
+```text
+client -> <docker-host>:1080 -> aTrust container -> <internal-host>:22
+```
+
+Verify the SOCKS5 port and target SSH service from the client first:
+
+```bash
+nc -vz <docker-host> 1080
+nc -v -w 5 -X 5 -x <docker-host>:1080 <internal-host> 22
+```
+
+The second command should print an `SSH-2.0-OpenSSH_...` banner. If the target is already defined in the client's `~/.ssh/config`, add only this line to its existing `Host` block:
+
+```sshconfig
+ProxyCommand /usr/bin/nc -X 5 -x <docker-host>:1080 %h %p
+```
+
+Complete configuration example:
+
+```sshconfig
+Host atrust-internal
+    HostName <internal-host>
+    User <ssh-user>
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    ProxyCommand /usr/bin/nc -X 5 -x <docker-host>:1080 %h %p
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+```
+
+Replace `<docker-host>`, `<internal-host>`, and `<ssh-user>` with the actual values, then run:
+
+```bash
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/config
+ssh atrust-internal
+```
+
+Here, `-X 5` selects SOCKS5, `-x` specifies the Docker-aTrust SOCKS5 endpoint, and OpenSSH replaces `%h` and `%p` with the `HostName` and `Port` from the current block. The argument after `-x` must be one `host:port` value; do not insert extra arguments before the address.
+
+The example works with macOS and Linux systems using OpenBSD `nc`. If local `nc` does not support `-X/-x`, install Nmap `ncat` and use:
+
+```sshconfig
+ProxyCommand ncat --proxy <docker-host>:1080 --proxy-type socks5 %h %p
+```
+
+> The OpenBSD `nc` example above assumes SOCKS5 without authentication. A remote client also requires port `1080` to be bound to a host interface reachable by that client, not only to `127.0.0.1`. Do not expose port `1080` to the public internet. Restrict source addresses with a firewall, or access it only through a trusted LAN, SSH tunnel, or private overlay network.
 
 ## 5. Keep Alive Program
 

@@ -165,14 +165,16 @@ docker run -d --name atrust-ubuntu `
 - 运行容器时是否设置了 `-e CHROMIUM=1`。
 - 是否使用了本仓库构建出来的新镜像（不要混用旧镜像）。
 
-## 4. 在宿主机使用 Clash Verge 做分流（推荐）
+## 4. 通过容器代理访问 aTrust 内网
 
 容器内 aTrust 建立连接后，会在宿主机暴露代理端口：
 
 - **SOCKS5 代理**：`127.0.0.1:${SOCKS_PORT}`（默认 `1080`）。
 - **HTTP 代理**：`127.0.0.1:${HTTP_PORT}`（默认 `8888`）。
 
-### 4.1 添加全局扩展脚本
+以下提供两种用法：需要按域名或网段分流多个应用时使用 Clash Verge；只需要 SSH 时，可以让 OpenSSH 直接使用 SOCKS5，不需要经过 Clash。
+
+### 4.1 Clash Verge：添加全局扩展脚本
 
 Clash Verge 的全局扩展脚本可以在订阅配置生效前追加代理节点和高优先级规则，适合把 aTrust 内网规则集中维护在一个脚本里。
 
@@ -206,7 +208,7 @@ function main(config) {
 }
 ```
 
-### 4.2 调整分流规则
+### 4.2 Clash Verge：调整分流规则
 
 请按你的实际环境修改脚本中的域名和内网网段：
 
@@ -219,6 +221,59 @@ function main(config) {
 
 - 内网域名经常依赖 aTrust 下发的"内网 DNS"才能解析。用 Clash Verge 将域名请求转发到 Docker 容器的 SOCKS5 代理后，解析过程更容易落在 aTrust 侧，避免宿主机本地 DNS 直接返回 `NXDOMAIN`。
 - 即便 aTrust 已生效，容器内仍然可能可以访问外网域名，这通常是分流（Split Tunnel）的结果，并不必然代表 aTrust 没有接管流量。
+
+### 4.3 不使用 Clash：OpenSSH 直接通过 SOCKS5 访问内网
+
+如果只需要 SSH 访问内网，不需要安装或配置 Clash。可以直接在 OpenSSH 中使用 `ProxyCommand`，让 SSH 自动经过 Docker-aTrust 暴露的 SOCKS5 端口：
+
+```text
+当前客户端 -> <docker-host>:1080 -> aTrust 容器 -> <internal-host>:22
+```
+
+先在客户端验证 SOCKS5 端口和目标 SSH 服务：
+
+```bash
+nc -vz <docker-host> 1080
+nc -v -w 5 -X 5 -x <docker-host>:1080 <internal-host> 22
+```
+
+成功时第二条命令会显示 `SSH-2.0-OpenSSH_...`。如果目标主机已经在客户端的 `~/.ssh/config` 中配置，只需在对应的 `Host` 配置块内增加一行：
+
+```sshconfig
+ProxyCommand /usr/bin/nc -X 5 -x <docker-host>:1080 %h %p
+```
+
+完整配置示例：
+
+```sshconfig
+Host atrust-internal
+    HostName <internal-host>
+    User <ssh-user>
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    ProxyCommand /usr/bin/nc -X 5 -x <docker-host>:1080 %h %p
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+```
+
+将 `<docker-host>`、`<internal-host>` 和 `<ssh-user>` 替换为实际值后，即可执行：
+
+```bash
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/config
+ssh atrust-internal
+```
+
+其中 `-X 5` 表示使用 SOCKS5，`-x` 后面是 Docker-aTrust 的 SOCKS5 地址，`%h` 和 `%p` 会由 OpenSSH 替换为当前配置块的 `HostName` 和 `Port`。`-x` 后只能跟一个 `主机:端口`，不要在地址前多写其他参数。
+
+macOS 和安装了 OpenBSD `nc` 的 Linux 可使用上述 `ProxyCommand`。如果本机的 `nc` 不支持 `-X/-x`，可安装 Nmap `ncat` 并改用：
+
+```sshconfig
+ProxyCommand ncat --proxy <docker-host>:1080 --proxy-type socks5 %h %p
+```
+
+> 上述 OpenBSD `nc` 示例按无认证 SOCKS5 编写。远程客户端需要确保容器的 `1080` 端口已绑定到该客户端可访问的宿主机接口，而不只是 `127.0.0.1`。不要把 `1080` 暴露到公网；应使用防火墙限制来源地址，或仅通过可信局域网、SSH 隧道及私有覆盖网络访问。
 
 ## 5. 保活程序（Keep Alive）
 
