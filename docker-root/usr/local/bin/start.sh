@@ -487,6 +487,17 @@ keep_pinging_url() {
 	done &
 }
 
+start_keep_alive_if_enabled() {
+	local config=/root/.keep-alive/config.json
+	[ -f "$config" ] || return 0
+
+	if python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("enabled") else 1)' "$config"; then
+		echo "Starting enabled Keep Alive daemon..."
+		DISPLAY="${DISPLAY:-:1}" python3 /usr/local/bin/keep-alive.py --start || \
+			echo "WARNING: Keep Alive daemon failed to start." >&2
+	fi
+}
+
 # container 再次运行时清除 /tmp 中的锁，使 container 能够反复使用。
 # 感谢 @skychan https://github.com/Hagb/docker-easyconnect/issues/4#issuecomment-660842149
 for f in /tmp/* /tmp/.*; do
@@ -511,6 +522,8 @@ then
 	start_tigervncserver &
 	start_desktop_icons_delayed &
 fi
+
+start_keep_alive_if_enabled
 
 # 环境变量 CHROMIUM 不为空时，删除可能存在的锁，并启动 chromium
 if [ -n "$CHROMIUM" ]; then
