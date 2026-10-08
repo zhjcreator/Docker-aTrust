@@ -1,0 +1,39 @@
+# host-routing 示例 compose：在基础部署上增加
+#   1) sysctls net.ipv4.ip_forward=1 —— 容器内转发（host-routing 方案必需）
+#   2) 固定容器 IP —— 宿主路由镜像脚本会动态解析容器 IP，固定 IP 仅为增强稳定性
+# 凭证一律走 .env（已列入 .gitignore），不要把真实密码写进本文件。
+services:
+  atrust:
+    image: atrust-ubuntu:chromium
+    container_name: atrust-ubuntu
+    restart: unless-stopped
+    devices:
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.conf.default.route_localnet=1
+      - net.ipv4.ip_forward=1
+    shm_size: "512m"
+    environment:
+      - PASSWORD=${PASSWORD:?Set PASSWORD in .env}
+      - CHROMIUM=1
+      - URLWIN=1
+      - USE_NOVNC=1
+    ports:
+      - "8081:8080"   # noVNC（浏览器访问）
+      - "5901:5901"   # VNC
+      - "1080:1080"   # SOCKS5 代理（host-routing 生效后可下线）
+      - "8888:8888"   # HTTP 代理（host-routing 生效后可下线）
+      - "54631:54631" # aTrust Web 登录
+    volumes:
+      - ./data:/root
+    networks:
+      default:
+        ipv4_address: 172.24.0.2
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.24.0.0/16

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<JWM>
+    <!-- bottom taskbar: tasklist recovers minimized windows; systray is automatic -->
+    <Taskbar height="26">
+        <TaskList/>
+        <Clock format="%H:%M"/>
+    </Taskbar>
+    <!-- desktop icons are drawn by pcmanfm in desktop mode, not by jwm -->
+    <RootMenu onroot="3">
+        <Exit/>
+    </RootMenu>
+</JWM>

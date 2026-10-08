@@ -1,0 +1,10 @@
+[Unit]
+Description=Mirror aTrust container utun7 routes to host (nbox jump-host routing)
+Documentation=https://github.com/zhjcreator/Docker-aTrust
+After=docker.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/run/docker.sock
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/atrust-host-routes.sh

@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically sync aTrust container routes to host
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=60s
+AccuracySec=10s
+Unit=atrust-host-routes.service
+
+[Install]
+WantedBy=timers.target

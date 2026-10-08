@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# keep-alive-launcher: 从桌面启动保活程序设置界面
+set -euo pipefail
+
+# 确保 X 可用
+if [ -z "${DISPLAY:-}" ]; then
+    export DISPLAY=:1
+fi
+
+# 确保配置目录存在
+mkdir -p /root/.keep-alive
+
+# 启动 GUI
+exec python3 /usr/local/bin/keep-alive-gui.py

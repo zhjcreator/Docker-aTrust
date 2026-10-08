@@ -1,0 +1,190 @@
+ARG UBUNTU_ARCHIVE_MIRROR=http://archive.ubuntu.com/ubuntu
+ARG UBUNTU_SECURITY_MIRROR=http://security.ubuntu.com/ubuntu
+ARG UBUNTU_PORTS_MIRROR=http://ports.ubuntu.com/ubuntu-ports
+
+FROM ubuntu:18.04 AS build
+
+ARG UBUNTU_ARCHIVE_MIRROR
+ARG UBUNTU_SECURITY_MIRROR
+ARG UBUNTU_PORTS_MIRROR
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN sed -i \
+        -e "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_ARCHIVE_MIRROR}|g" \
+        -e "s|http://security.ubuntu.com/ubuntu|${UBUNTU_SECURITY_MIRROR}|g" \
+        -e "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_PORTS_MIRROR}|g" \
+        /etc/apt/sources.list
+
+RUN apt-get -o Acquire::Retries=5 update && \
+    apt-get -o Acquire::Retries=5 install -y --no-install-recommends --no-install-suggests \
+        build-essential ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /out/usr/local/lib
+
+COPY fake-hwaddr /tmp/src/fake-hwaddr/
+COPY fake-getlogin /tmp/src/fake-getlogin/
+
+RUN make -C /tmp/src/fake-hwaddr clean all && \
+    install -D -m 0755 /tmp/src/fake-hwaddr/fake-hwaddr.so /out/usr/local/lib/fake-hwaddr.so && \
+    make -C /tmp/src/fake-getlogin clean all && \
+    install -D -m 0755 /tmp/src/fake-getlogin/fake-getlogin.so /out/usr/local/lib/fake-getlogin.so
+
+
+FROM ubuntu:18.04
+
+ARG EC_HOST VPN_TYPE=EC_GUI http_proxy https_proxy CHROMIUM
+ARG UBUNTU_ARCHIVE_MIRROR
+ARG UBUNTU_SECURITY_MIRROR
+ARG UBUNTU_PORTS_MIRROR
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG NOVNC_URL=https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz
+ARG NOVNC_SHA256=89b0354c94ad0b0c88092ec7a08e28086d3ed572f13660bac28d5470faaae9c1
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+COPY ["./build-scripts/get-echost-names.sh", "./build-scripts/add-qemu.sh", "/tmp/build-scripts/"]
+
+RUN sed -i \
+        -e "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_ARCHIVE_MIRROR}|g" \
+        -e "s|http://security.ubuntu.com/ubuntu|${UBUNTU_SECURITY_MIRROR}|g" \
+        -e "s|http://ports.ubuntu.com/ubuntu-ports|${UBUNTU_PORTS_MIRROR}|g" \
+        /etc/apt/sources.list && \
+    . /tmp/build-scripts/get-echost-names.sh && \
+    . /tmp/build-scripts/add-qemu.sh && \
+    if [ "ATRUST" = "$VPN_TYPE" ]; then \
+        extra_pkgs="libssl1.1 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libqt5x11extras5 procps \
+                    libqt5core5a libqt5network5 libqt5widgets5 libldap-2.4-2 stalonetray"; \
+    else \
+        extra_pkgs="libgtk2.0-0 libdbus-glib-1-2 libgconf-2-4 libnspr4:$EC_HOST libnss3:$EC_HOST"; \
+    fi && \
+    i=0 && \
+    while :; do \
+        i=$((i + 1)) && \
+        apt-get -o Acquire::Retries=5 update && \
+        apt-get -o Acquire::Retries=5 install -y --no-install-recommends --no-install-suggests \
+            libx11-xcb1 libnss3 libasound2 iptables xclip libxtst6 \
+            tigervnc-standalone-server tigervnc-common psmisc flwm jwm x11-utils autocutsel \
+            busybox iproute2 tinyproxy libxss1 ca-certificates pcmanfm \
+            fonts-wqy-microhei socat wget xdotool iputils-ping python3 python3-gi \
+            gir1.2-gtk-3.0 python3-pip python3-numpy $qemu_pkgs $extra_pkgs && \
+        break; \
+        if [ "$i" -ge 10 ]; then \
+            echo "ERROR: apt-get failed too many times." >&2; \
+            exit 1; \
+        fi; \
+        echo "WARNING: apt-get failed, retrying... ($i/10)" >&2; \
+        sleep 2; \
+    done && \
+    if [ -n "$CHROMIUM" ]; then \
+        j=0 && \
+        while :; do \
+            j=$((j + 1)) && \
+            apt-get -o Acquire::Retries=5 update && \
+            apt-get -o Acquire::Retries=5 install -y --no-install-recommends --no-install-suggests chromium-browser && \
+            break; \
+            if [ "$j" -ge 10 ]; then \
+                echo "ERROR: installing chromium-browser failed too many times." >&2; \
+                exit 1; \
+            fi; \
+            echo "WARNING: installing chromium-browser failed, retrying... ($j/10)" >&2; \
+            sleep 2; \
+        done; \
+    fi && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip3 install --no-cache-dir -i ${PIP_INDEX_URL} websockify==0.10.0 && \
+    mkdir -p /usr/local/share/novnc && \
+    ( wget -q -O /tmp/novnc.tar.gz ${NOVNC_URL} || \
+      wget -q -O /tmp/novnc.tar.gz https://ghp.ci/${NOVNC_URL} || \
+      wget -q -O /tmp/novnc.tar.gz https://mirror.ghproxy.com/${NOVNC_URL} || \
+      wget -q -O /tmp/novnc.tar.gz https://gh-proxy.com/${NOVNC_URL} ) && \
+    echo "${NOVNC_SHA256}  /tmp/novnc.tar.gz" | sha256sum -c - && \
+    tar -xzf /tmp/novnc.tar.gz -C /usr/local/share/novnc --strip-components=1 && \
+    rm -f /tmp/novnc.tar.gz
+
+# 升级 dante 到 1.4.3:Ubuntu18.04 自带 dante-server 1.4.1 不支持 external.rotation 关键字,
+# 会导致 danted 解析 /run/danted.conf 失败、容器无限重启。1.4.3 支持该关键字(按路由选择出口接口,经 aTrust 隧道)。
+# 上游 dante 可执行文件名为 sockd,Debian/Ubuntu 包 renamed 为 danted,这里编译后补一个软链。
+RUN apt-get -o Acquire::Retries=5 update && \
+    apt-get -o Acquire::Retries=5 install -y --no-install-recommends --no-install-suggests \
+        build-essential pkg-config libtool automake autoconf && \
+    rm -rf /var/lib/apt/lists/* && \
+    DANTE_VER=1.4.3 && \
+    i=0 && \
+    while [ "$i" -lt 5 ]; do \
+        i=$((i+1)); \
+        wget -q -O /tmp/dante.tar.gz "https://www.inet.no/dante/files/dante-${DANTE_VER}.tar.gz" && break; \
+        sleep 2; \
+    done && \
+    [ -f /tmp/dante.tar.gz ] || { echo "ERROR: failed to download dante ${DANTE_VER} source"; exit 1; } && \
+    tar xzf /tmp/dante.tar.gz -C /tmp && \
+    DANTE_DIR=$(ls -d /tmp/dante-* | head -1) && \
+    cd "$DANTE_DIR" && \
+    ./configure --prefix=/usr --sysconfdir=/etc && \
+    make -j"$(nproc)" && \
+    make install && \
+    ldconfig && \
+    ln -sf /usr/sbin/sockd /usr/sbin/danted && \
+    cd / && rm -rf "$DANTE_DIR" /tmp/dante.tar.gz
+
+RUN if command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then \
+        ln -sf "$(command -v chromium-browser)" /usr/bin/chromium; \
+    fi && \
+    if command -v chromium >/dev/null 2>&1; then \
+        ln -sf "$(command -v chromium)" /usr/bin/x-www-browser; \
+        ln -sf "$(command -v chromium)" /usr/bin/www-browser; \
+        ln -sf "$(command -v chromium)" /usr/bin/gnome-www-browser; \
+    fi
+
+RUN if [ -x /usr/bin/xdg-open ] && [ ! -e /usr/bin/xdg-open.real ]; then \
+        cp -a /usr/bin/xdg-open /usr/bin/xdg-open.real; \
+    fi
+
+RUN groupadd -r socks && useradd -r -g socks socks
+
+COPY --from=build /out/ /
+
+COPY ["./build-scripts/install-vpn-gui.sh", "./build-scripts/mk-qemu-wrapper.sh", "/tmp/build-scripts/"]
+
+COPY ./docker-root-preinst /
+
+ARG VPN_URL ELECTRON_URL USE_VPN_ELECTRON VPN_DEB_PATH
+
+RUN /tmp/build-scripts/install-vpn-gui.sh
+
+COPY ./docker-root /
+
+# 安装保活程序
+COPY ["./keep-alive/keep-alive.py", "./keep-alive/keep-alive-gui.py", "/usr/local/bin/"]
+RUN chmod 0755 /usr/local/bin/keep-alive.py /usr/local/bin/keep-alive-gui.py \
+        /usr/local/bin/keep-alive-launcher /usr/local/bin/novnc-websockify-wrapper.py
+# 确保启动脚本始终可执行,避免重建后丢失 +x 导致 start.sh 内 eval 失败(Permission denied)
+RUN chmod 0755 /usr/local/bin/*.sh
+# 还原 /usr 目录遍历权限:部分构建步骤使 /usr、/usr/local、/usr/local/bin 变为 700(root-only),
+# 导致 start.sh 以 unprivileged 用户(daemon)启动 noVNC 时无法遍历目录 exec novnc-websockify-wrapper.py,
+# 报 "Permission denied"。恢复标准 a+rX 后 noVNC 可正常拉起。
+RUN chmod -R a+rX /usr
+# 还原 /etc 目录遍历权限:相同根因下 /etc 也会变 700, 导致 aTrustAgent 通过 su sangfor 启动 aTrustCore 时
+# 读不到 /etc/passwd, 进而 getent+awk 等 NSS 调用 Permission denied, aTrustCore fork 后立即崩溃,
+# 客户端弹 "The core service was started, causing some functions to be abnormal"。
+RUN chmod 0755 /etc && \
+    chmod a+r /etc/passwd /etc/group /etc/nsswitch.conf && \
+    chmod a+rX /etc/alternatives /etc/dpkg 2>/dev/null || true
+
+# 安装 autocutsel (VNC 剪贴板双向同步到 X CLIPBOARD/PRIMARY selection)。
+# Ubuntu 18.04 主仓库的 autocutsel 0.10.0 与 libxt6 兼容, 直接 dpkg -i 预下载的 deb 即可。
+# 容器内 apt 受限于 VPN DNS 无法解析 mirrors.aliyun.com, 所以不走 apt-get install。
+COPY ./docker-root/usr/local/debs/autocutsel.deb /tmp/autocutsel.deb
+RUN dpkg -i /tmp/autocutsel.deb && rm -f /tmp/autocutsel.deb && \
+    command -v autocutsel >/dev/null
+
+# novnc 命令指向 min-size 启动方式
+RUN ln -sf /usr/local/bin/novnc-min-size.sh /usr/local/bin/novnc
+
+ENV PING_INTERVAL=1800
+
+VOLUME /root/
+
+CMD ["start.sh"]
